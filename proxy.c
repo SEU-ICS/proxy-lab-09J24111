@@ -11,12 +11,15 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 void parse_url(char *url, char *hostname, char* path, char *port,char *request_header);
+void *thread(void *vargp);
 int main(int argc, char **argv)
 {
-    int listenfd, connfd;
+    int listenfd;
+    int *connfd;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
+    pthread_t tid;
 
     if(argc !=2){
         fprintf(stderr,"Usage: %s <port number>\n", argv[0]);
@@ -26,11 +29,13 @@ int main(int argc, char **argv)
     listenfd = Open_listenfd(argv[1]);
     while(1){
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        connfd = Malloc(sizeof(int));
+        *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);
-        Close(connfd);
+        Pthread_create(&tid,NULL,thread,connfd);
+        // doit(connfd);
+        // Close(connfd);
     }
     //printf("%s", user_agent_hdr);
     return 0;
@@ -73,6 +78,7 @@ void parse_url(char *url, char *hostname, char* path, char *port,char *request_h
     const char *path_start = NULL;
 
     start = strstr(url ,"http://");
+    if(start == NULL)return;
     start += 7;
 
     path_start =strstr(start, "/");
@@ -105,4 +111,13 @@ void read_requesthdrs(rio_t *rp){
     while(strcmp(buf, "\r\n")){
         Rio_readlineb(rp, buf, MAXLINE);
     }
+}
+
+void *thread(void *vargp){
+    int connfd = *((int *)vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+    doit(connfd);
+    Close(connfd);
+    return NULL;
 }
